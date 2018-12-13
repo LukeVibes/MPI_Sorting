@@ -14,14 +14,19 @@ using namespace std;
 int numberOfValuesToSort;
 int numberOfProcessorsToUse;
 int* valuesToSort;
+int* p_sample;
+int* all_p_samples;
 
 bool debug=true;
 
 ///allocateInitalMemory: simply does most of malloc needed for program.
 void  allocateInitalMemory(){
 	int n = numberOfValuesToSort;
+	int p = numberOfProcessorsToUse;
 	
 	valuesToSort = (int *)malloc(sizeof(int) * n); 
+	p_sample	 = (int *)malloc(sizeof(int) * (p*p));
+	all_p_samples= (int *)malloc(sizeof(int) * (p*p));
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -48,10 +53,7 @@ void importFromFile(string filename){
 	for (int i = 0; i < n; i++) {
 		inputFile >> v;
 		valuesToSort[i] = (int) v;
-	
-		if(debug==true){cout << valuesToSort[i] << " ";}
 	}
-	if(debug==true){cout << endl;}
 		
 	inputFile.close();
 }
@@ -67,10 +69,8 @@ void exportToFile(string filename){
 	for(int i=0; i<n; i++){
 		outputFile << valuesToSort[i];
 		outputFile << endl;
-		if(debug==true){cout << valuesToSort[i] << " ";}
 	}
 	outputFile << endl << endl;
-	if(debug==true){cout << endl;}
 	
 	///Print performance data
 	outputFile << "Performance: " << endl;
@@ -83,87 +83,174 @@ void exportToFile(string filename){
 ///maxHeapifier(): recursive function that ensure value at location i follows,
 ///				   Heap Sort rules, and adjusts accordingly until array is in
 ///				   proper format.
-void maxHeapifer(int index, int n){
+void maxHeapifer(int* arr, int index, int n){
 	int i_leftnode = (index * 2) +1;
 	int i_rightnode = (index * 2) +2;
 	int i_largest = index;
 	
 	///See if child is larger than parent, if so, record the larger child
-	if((i_leftnode <= n) and (valuesToSort[i_leftnode] > valuesToSort[index])){
+	if((i_leftnode <= n) and (arr[i_leftnode] > arr[index])){
 		i_largest = i_leftnode;
 	}
 	
-	if((i_rightnode <= n) and (valuesToSort[i_rightnode] > valuesToSort[i_largest])){
+	if((i_rightnode <= n) and (arr[i_rightnode] > arr[i_largest])){
 		i_largest = i_rightnode;
 	}
 	
 	///if a Heap Sort rule is violated adjust the array
 	if(i_largest != index){
-		int temp = valuesToSort[index];
-		valuesToSort[index] = valuesToSort[i_largest];
-		valuesToSort[i_largest] = temp;
+		int temp = arr[index];
+		arr[index] = arr[i_largest];
+		arr[i_largest] = temp;
 		
 		///because we swapped, we need to make sure values under the uzew
 		///swapped value follow Heap Sort
-		maxHeapifer(i_largest, n);
+		maxHeapifer(arr, i_largest, n);
 	}
 }
 
 ///maxHeapMaker(): creates the inital max heap needed for Heap Sort
-void maxHeapMaker(int n){
+void maxHeapMaker(int* arr, int n){
 	for(int i= ceil(n/2)-1; i >= 0; i--){
-		maxHeapifer(i, n-1);
+		maxHeapifer(arr, i, n-1);
 	}
 }
 
 ///heapSorter(): the controller function to launch a Heap Sort
-void heapSorter(int n){
-	maxHeapMaker(n);
+void heapSorter(int* arr, int n){
+	maxHeapMaker(arr, n);
 	
 	///after making the max heap, perform the classic bottom-leaf swap and adjust
 	int temp = -1;
 	for(int i = n-1; i >= 0; i--){
-		temp = valuesToSort[i];
-		valuesToSort[i] = valuesToSort[0];
-		valuesToSort[0] = temp;
-		maxHeapifer	(0, i-1);
+		temp = arr[i];
+		arr[i] = arr[0];
+		arr[0] = temp;
+		maxHeapifer(arr, 0, i-1);
 	}
+}
+
+///p_sampleMaker(): gets every  n/pth value (n being the local n)
+void p_samplerMaker(int* arr, int n, int p){
+	int p_index=1;
+	int count=0;
+	
+	p_sample[0] = valuesToSort[0];
+	
+	for(int i = 0; i<n; i++){
+		if(count == floor(n/p)){
+			p_sample[p_index] = arr[i];
+			p_index++;
+			count = 0;		
+		}
+		else{
+			count++;
+		}
+	}
+	
+	
 }
 
 int main(int argc, char *argv[])
 
 {
-  int rank;
-  int p;
-  double wtime;
-  
-  //Setup
-  MPI::Init(argc, argv);          
-  p = MPI::COMM_WORLD.Get_size(); 
-  rank = MPI::COMM_WORLD.Get_rank();
-  
- 
+	int rank;
+	int p;
+	double wtime;
+
+ //Setup
+	MPI::Init(argc, argv);          
+	p = MPI::COMM_WORLD.Get_size(); 
+	rank = MPI::COMM_WORLD.Get_rank();
+
+
  //Step One: Locally Sort each processors values
- 
-  if(rank==0){
 	string inputfile = "input-0" + to_string(rank) + ".txt";
 	string outputfile = "output-0" + to_string(rank) + ".txt";
-	
-	cout << inputfile << endl;
-	if(debug==true){cout << "Input File: " << rank  << endl;}
+
 	importFromFile(inputfile);
-	
-	if(debug==true){cout << endl;}
 	int n = numberOfValuesToSort;
-	heapSorter(n);
+	heapSorter(valuesToSort, n);
+
+
+ //Step Two: Create local p-sample
+	p = numberOfProcessorsToUse;
+	p_samplerMaker(valuesToSort, n, p);
 	
-	if(debug==true){cout << "Output File: "<< rank << endl;}
+ //Step Three: Send all p-sample's to Proc-0
+	///malloc room for all p samples on Proc-0
+	MPI_Alltoall(p_sample, p, MPI_INT,
+			     all_p_samples, p, MPI_INT, 
+				 MPI_COMM_WORLD);
+	
+	if(rank==0){
+		for(int i=0; i<(p*p); i++){
+			cout << all_p_samples[i] << " ";
+		}
+		cout << endl;
+	}
+
+ //Step Four: Sort all p-samples in Proc-0
+	if(rank==0){
+	}
+	
+	
+	
+	
+	
+	
+	
+	/*
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==0){
+		for(int i=0; i<p; i++){
+		if(debug==true){cout << p_sample[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+		
+		for(int i=0; i<n; i++){
+		if(debug==true){cout << valuesToSort[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if( rank==1){
+		for(int i=0; i<p; i++){
+		if(debug==true){cout << p_sample[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+		
+		for(int i=0; i<n; i++){
+		if(debug==true){cout << valuesToSort[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if( rank==2){
+		for(int i=0; i<p; i++){
+		if(debug==true){cout << p_sample[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if( rank==3){
+		for(int i=0; i<p; i++){
+		if(debug==true){cout << p_sample[i] << " ";}
+		}
+		if(debug==true){cout << endl << endl;}
+	}
+	*/
+
+
+
 	exportToFile(outputfile);
 
-}
-  
-  //Exit
-  MPI::Finalize();
-  return 0;
+
+	//Exit
+	if(rank==0){free(all_p_samples);}
+	free(p_sample);
+	free(valuesToSort);
+	MPI::Finalize();
+	return 0;
 }
 
