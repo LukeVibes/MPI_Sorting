@@ -16,6 +16,7 @@ int numberOfProcessorsToUse;
 int* valuesToSort;
 int* p_sample;
 int* all_p_samples;
+int* global_p;
 
 bool debug=true;
 
@@ -27,6 +28,7 @@ void  allocateInitalMemory(){
 	valuesToSort = (int *)malloc(sizeof(int) * n); 
 	p_sample	 = (int *)malloc(sizeof(int) * (p*p));
 	all_p_samples= (int *)malloc(sizeof(int) * (p*p));
+	global_p     = (int *)malloc(sizeof(int) * (p*p));
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -131,15 +133,16 @@ void heapSorter(int* arr, int n){
 }
 
 ///p_sampleMaker(): gets every  n/pth value (n being the local n)
-void p_samplerMaker(int* arr, int n, int p){
-	int p_index=1;
+void p_samplerMaker(int* arr, int n, int p, int* output_p_sample){
+	int p_index=0;
+	int trigger = floor((n-p)/p);
 	int count=0;
 	
-	p_sample[0] = valuesToSort[0];
-	
 	for(int i = 0; i<n; i++){
-		if(count == floor(n/p)){
-			p_sample[p_index] = arr[i];
+		if(p_index==(p-1)){break;}///we only want to map all but the last value, as the last value 
+								  /// will always be the last value in the input array (a.k.a. arr) 
+		if(count == trigger){
+			output_p_sample[p_index] = arr[i];
 			p_index++;
 			count = 0;		
 		}
@@ -148,7 +151,7 @@ void p_samplerMaker(int* arr, int n, int p){
 		}
 	}
 	
-	
+	output_p_sample[p-1] = arr[n-1]; ///set the last value off p_sample to last value of input array
 }
 
 int main(int argc, char *argv[])
@@ -175,7 +178,7 @@ int main(int argc, char *argv[])
 
  //Step Two: Create local p-sample
 	p = numberOfProcessorsToUse;
-	p_samplerMaker(valuesToSort, n, p);
+	p_samplerMaker(valuesToSort, n, p, p_sample);
 	
  //Step Three: Send all p-sample's to Proc-0
 	///malloc room for all p samples on Proc-0
@@ -192,8 +195,25 @@ int main(int argc, char *argv[])
 
  //Step Four: Sort all p-samples in Proc-0
 	if(rank==0){
+		heapSorter(all_p_samples, p*p);
 	}
-	
+	if(rank==0){
+		for(int i=0; i<(p*p); i++){
+			cout << all_p_samples[i] << " ";
+		}
+		cout << endl;
+	}
+
+ //Step Five: Create global-p in Proc-0
+	if(rank==0){
+		p_samplerMaker(all_p_samples, p*p, p, global_p);
+	}
+	if(rank==0){
+		for(int i=0; i<(p); i++){
+			cout << global_p[i] << " ";
+		}
+		cout << endl;
+	}
 	
 	
 	
@@ -206,8 +226,8 @@ int main(int argc, char *argv[])
 		for(int i=0; i<p; i++){
 		if(debug==true){cout << p_sample[i] << " ";}
 		}
-		if(debug==true){cout << endl << endl;}
 		
+		if(debug==true){cout << endl;}
 		for(int i=0; i<n; i++){
 		if(debug==true){cout << valuesToSort[i] << " ";}
 		}
@@ -218,8 +238,8 @@ int main(int argc, char *argv[])
 		for(int i=0; i<p; i++){
 		if(debug==true){cout << p_sample[i] << " ";}
 		}
-		if(debug==true){cout << endl << endl;}
-		
+	
+		if(debug==true){cout << endl;}
 		for(int i=0; i<n; i++){
 		if(debug==true){cout << valuesToSort[i] << " ";}
 		}
@@ -242,12 +262,12 @@ int main(int argc, char *argv[])
 	*/
 
 
-
 	exportToFile(outputfile);
 
 
 	//Exit
-	if(rank==0){free(all_p_samples);}
+	free(global_p);
+	free(all_p_samples);
 	free(p_sample);
 	free(valuesToSort);
 	MPI::Finalize();
