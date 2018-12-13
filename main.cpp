@@ -214,7 +214,29 @@ int main(int argc, char *argv[])
 		}
 		cout << endl;
 	}
+
+ //Step Seven: Send global-p to all processors
+	int* sendBuffer = (int *)malloc(sizeof(int) * p*p);
+	if(rank==0){
+		int j=0;
+		for(int i=0; i<p*p; i++){
+			if(i%p==0){j=0;}
+			
+			sendBuffer[i]= global_p[j];
+			j++;
+			
+		}
+	}
+	MPI_Alltoall(sendBuffer, p, MPI_INT,
+			     global_p, p, MPI_INT, 
+				 MPI_COMM_WORLD);
 	
+	if(rank==2){
+		for(int i=0; i<(p); i++){
+			cout << global_p[i] << " ";
+		}
+		cout << endl;
+	}
 	
 	
 	
@@ -266,6 +288,7 @@ int main(int argc, char *argv[])
 
 
 	//Exit
+	free(sendBuffer);
 	free(global_p);
 	free(all_p_samples);
 	free(p_sample);
