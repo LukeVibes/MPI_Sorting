@@ -25,6 +25,9 @@ int* global_p;
 ///bucket related arrays
 int* buckets;
 int* bucketSize;
+int* sdisplc;
+int* rdisplc;
+int* recvcount;
 
 ///debug values
 bool debug=true;
@@ -40,6 +43,9 @@ void  allocateInitalMemory(){
 	global_p     = (int *)malloc(sizeof(int) * (p*p));
 	buckets		 = (int *)malloc(sizeof(int) * n);
 	bucketSize   = (int *)calloc(p, sizeof(int)); 
+	sdisplc      = (int *)calloc(p, sizeof(int)); 
+	rdisplc		 = (int *)calloc(p, sizeof(int)); 
+	recvcount    = (int *)malloc(sizeof(int) * p);
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -198,13 +204,8 @@ void bucketsPushoverValues(int ourBucket, int p, int bdisplace, int newvalue, in
 	else{
 		buckets[index] = newvalue;
 	}
-	
-	cout << "buckets::: " << valuesToSort[index] << " i: " << index << endl;
-		for(int i=0; i<n; i++){
-			cout << buckets[i] << ", ";
-		}
-		cout << endl << endl;
 }
+
 //REMEMBER TO ADD: IF NOT SMALLER THAN FIRST 3 BUCKETS, PUT IN LAST BUCKET
 void bucketMaker(int n, int p){
 	
@@ -229,8 +230,6 @@ void bucketMaker(int n, int p){
 				for(int q=b; q>=0; q--){
 					bdisplc += bucketSize[q];
 				}
-				cout << endl;
-				
 				
 				///pushover values and insert!
 				bucketsPushoverValues(b, p, bdisplc, valuesToSort[i], n);
@@ -243,6 +242,21 @@ void bucketMaker(int n, int p){
 
 }
 
+void displcMaker(int p, int* displc, int* sizes){
+	
+	int total;
+	for(int i=0; i<p; i++){
+		total=0;
+		
+		if(i>0){
+			for(int b=i-1; b>=0; b--){
+				total += sizes[b];
+			}
+		}
+		displc[i] = total;
+	}
+}
+
 int main(int argc, char *argv[])
 
 {
@@ -250,7 +264,7 @@ int main(int argc, char *argv[])
 	int p;
 	double wtime;
 
- //Setup
+ //Set-up
 	MPI::Init(argc, argv);          
 	p = MPI::COMM_WORLD.Get_size(); 
 	rank = MPI::COMM_WORLD.Get_rank();
@@ -330,18 +344,29 @@ int main(int argc, char *argv[])
 //Step Eight: Locally Create p buckets
 	///create buckets and bucketSize
 	bucketMaker(n, p);
-		
+	
 	///create sdisplc array
-
+	displcMaker(p, sdisplc, bucketSize);
+	
 //Step Nine: Send bucket sizes
-
-	///create recvcount
+	///sending (also creates recvcount aka bucket sizes of others)
+	MPI_Alltoall(bucketSize, 1, MPI_INT,
+				 recvcount, 1, MPI_INT,
+				 MPI_COMM_WORLD);
+	
 	///create rdisplc
+	displcMaker(p, rdisplc, recvcount);
 
 //Step Ten: bucket Alltoallv
 
 
+//Step Eleven: send out post-bucket sizes to all
 
+
+//Step Twelve: Adjust post-bucket sizes
+
+
+//Step Thirteen: Print to output file!
 
 
 
@@ -422,11 +447,11 @@ int main(int argc, char *argv[])
 	exportToFile(outputfile);
 
 
-	//Exit
+ //Wrap-up
 	free(bucketSize);
-	//free(recvcount);
-	//free(sdisplc);
-	//free(rdisplc)
+	free(recvcount);
+	free(sdisplc);
+	free(rdisplc);
 	free(buckets);
 	//free(sendBuffer);
 	free(global_p);
