@@ -199,19 +199,29 @@ void bucketsPushoverValues(int ourBucket, int p, int bdisplace, int newvalue, in
 		buckets[index] = newvalue;
 	}
 	
-	
+	cout << "buckets::: " << valuesToSort[index] << " i: " << index << endl;
+		for(int i=0; i<n; i++){
+			cout << buckets[i] << ", ";
+		}
+		cout << endl << endl;
 }
 //REMEMBER TO ADD: IF NOT SMALLER THAN FIRST 3 BUCKETS, PUT IN LAST BUCKET
 void bucketMaker(int n, int p){
 	
+	int largestBucket=0;
+	int loopStart=0;
 	int bdisplc=0;
 	for(int i=0; i<n; i++){
 		
+		loopStart = largestBucket;
+		
 		///Check which bucket it belongs in...
-		for(int b=0; b<p; b++){
+		for(int b=loopStart; b<p; b++){
 			if(valuesToSort[i] <= global_p[b]){
+				if (b>largestBucket){largestBucket=b;} ///No point in checking buckets we already filled,
+													   ///we can do this thanks to the local array being
+													   ///sorted!
 				
-				bucketSize[b] = bucketSize[b] + 1;
 				
 				///To see where in buckets[] we place the new value we need to know,
 				///works by getting your bucket size (so it goes to end) plus all bucket
@@ -224,6 +234,7 @@ void bucketMaker(int n, int p){
 				
 				///pushover values and insert!
 				bucketsPushoverValues(b, p, bdisplc, valuesToSort[i], n);
+				bucketSize[b] = bucketSize[b] + 1;
 				bdisplc=0;
 				break;
 			}
@@ -317,9 +328,27 @@ int main(int argc, char *argv[])
 	}
 
 //Step Eight: Locally Create p buckets
-	if(rank==0){
-		bucketMaker(n, p);
+	///create buckets and bucketSize
+	bucketMaker(n, p);
 		
+	///create sdisplc array
+
+//Step Nine: Send bucket sizes
+
+	///create recvcount
+	///create rdisplc
+
+//Step Ten: bucket Alltoallv
+
+
+
+
+
+
+
+
+
+	/*
 		cout << endl << endl;
 		cout << "global-p: " << endl;
 		for(int i=0; i<(p); i++){
@@ -345,18 +374,7 @@ int main(int argc, char *argv[])
 			cout << valuesToSort[i] << ", ";
 		}
 		cout << endl << endl;
-	}
-	
-	///create sdisplc array
-
-//Step Nine: Send bucket sizes
-
-	///create recvcount
-	///create rdisplc
-
-//Step Ten: bucket Alltoallv
-
-
+		*/
 	
 	
 	/*
