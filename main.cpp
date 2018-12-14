@@ -10,14 +10,23 @@
 # include "mpi.h"
 using namespace std;
 
-
+///Inital values
 int numberOfValuesToSort;
 int numberOfProcessorsToUse;
+
+///main array of inputted values
 int* valuesToSort;
+
+///p-sample related arrays
 int* p_sample;
 int* all_p_samples;
 int* global_p;
 
+///bucket related arrays
+int* buckets;
+int* bucketSize;
+
+///debug values
 bool debug=true;
 
 ///allocateInitalMemory: simply does most of malloc needed for program.
@@ -29,6 +38,8 @@ void  allocateInitalMemory(){
 	p_sample	 = (int *)malloc(sizeof(int) * (p*p));
 	all_p_samples= (int *)malloc(sizeof(int) * (p*p));
 	global_p     = (int *)malloc(sizeof(int) * (p*p));
+	buckets		 = (int *)malloc(sizeof(int) * n);
+	bucketSize   = (int *)calloc(p, sizeof(int)); 
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -154,6 +165,73 @@ void p_samplerMaker(int* arr, int n, int p, int* output_p_sample){
 	output_p_sample[p-1] = arr[n-1]; ///set the last value off p_sample to last value of input array
 }
 
+void bucketsPushoverValues(int ourBucket, int p, int bdisplace, int newvalue, int n){
+	int index = bdisplace;
+	int b = ourBucket;
+	
+	///Part 1: check if we even NEED to push values over (for an insert)
+	///-we do this by seeing if the bucketSizes ahead of our bucket 
+	/// is greater than zero, not including out bucketsize as we add to
+	/// the end of our bucekt thanks to bdisplc including our buckets size!
+	int valuesAhead=0;
+	for(int i=b+1; i<p; i++){
+		valuesAhead += bucketSize[i];
+	}
+	
+	///Part 2: ok so if there are values ahead of us, slide em over
+	if(valuesAhead>0 and index<(n-1)){
+		int temp;
+		int tempB;
+		temp = buckets[index];
+		buckets[index] = newvalue;
+		
+		///we [start] at index+1 because           : we already shift the inital spot aboce
+		///we [ end ] at <valuesAhead+index because: we only have valuesAhead-1 values to go 
+		for(int i=index+1; i<valuesAhead+index; i++){
+			tempB = buckets[i];
+			buckets[i] = temp;
+			temp = tempB;
+		}
+	}
+	
+	///If their arent any values ahead of us, just add it!
+	else{
+		buckets[index] = newvalue;
+	}
+	
+	
+}
+//REMEMBER TO ADD: IF NOT SMALLER THAN FIRST 3 BUCKETS, PUT IN LAST BUCKET
+void bucketMaker(int n, int p){
+	
+	int bdisplc=0;
+	for(int i=0; i<n; i++){
+		
+		///Check which bucket it belongs in...
+		for(int b=0; b<p; b++){
+			if(valuesToSort[i] <= global_p[b]){
+				
+				bucketSize[b] = bucketSize[b] + 1;
+				
+				///To see where in buckets[] we place the new value we need to know,
+				///works by getting your bucket size (so it goes to end) plus all bucket
+				///sizes before you.			
+				for(int q=b; q>=0; q--){
+					bdisplc += bucketSize[q];
+				}
+				cout << endl;
+				
+				
+				///pushover values and insert!
+				bucketsPushoverValues(b, p, bdisplc, valuesToSort[i], n);
+				bdisplc=0;
+				break;
+			}
+		}
+	}
+
+}
+
 int main(int argc, char *argv[])
 
 {
@@ -237,9 +315,48 @@ int main(int argc, char *argv[])
 		}
 		cout << endl;
 	}
+
+//Step Eight: Locally Create p buckets
+	if(rank==0){
+		bucketMaker(n, p);
+		
+		cout << endl << endl;
+		cout << "global-p: " << endl;
+		for(int i=0; i<(p); i++){
+			cout << global_p[i] << ", ";
+		}
+		cout << endl << endl;
+		
+		for(int b=0; b<p; b++){
+			cout << "Bucket " << b << ":" << endl;
+			cout << "    size: " << bucketSize[b] << endl << endl;
+		}
+		
+		cout << endl << endl;
+		
+		cout << "buckets: " << endl;
+		for(int i=0; i<n; i++){
+			cout << buckets[i] << ", ";
+		}
+		cout << endl << endl;
+		
+		cout << "valuesToSort: " << endl;
+		for(int i=0; i<n; i++){
+			cout << valuesToSort[i] << ", ";
+		}
+		cout << endl << endl;
+	}
 	
-	
-	
+	///create sdisplc array
+
+//Step Nine: Send bucket sizes
+
+	///create recvcount
+	///create rdisplc
+
+//Step Ten: bucket Alltoallv
+
+
 	
 	
 	/*
@@ -288,7 +405,12 @@ int main(int argc, char *argv[])
 
 
 	//Exit
-	free(sendBuffer);
+	free(bucketSize);
+	//free(recvcount);
+	//free(sdisplc);
+	//free(rdisplc)
+	free(buckets);
+	//free(sendBuffer);
 	free(global_p);
 	free(all_p_samples);
 	free(p_sample);
