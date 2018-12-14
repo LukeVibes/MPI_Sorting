@@ -28,6 +28,7 @@ int* bucketSize;
 int* sdisplc;
 int* rdisplc;
 int* recvcount;
+int* post_buckets;
 
 ///debug values
 bool debug=true;
@@ -46,6 +47,7 @@ void  allocateInitalMemory(){
 	sdisplc      = (int *)calloc(p, sizeof(int)); 
 	rdisplc		 = (int *)calloc(p, sizeof(int)); 
 	recvcount    = (int *)malloc(sizeof(int) * p);
+	post_buckets = (int *)malloc(sizeof(int) * n);
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -358,7 +360,9 @@ int main(int argc, char *argv[])
 	displcMaker(p, rdisplc, recvcount);
 
 //Step Ten: bucket Alltoallv
-
+	MPI_Alltoallv(buckets, bucketSize, sdisplc, MPI_INT,
+				  post_buckets, recvcount, rdisplc, MPI_INT,
+				  MPI_COMM_WORLD);
 
 //Step Eleven: send out post-bucket sizes to all
 
@@ -448,6 +452,7 @@ int main(int argc, char *argv[])
 
 
  //Wrap-up
+	free(post_buckets);
 	free(bucketSize);
 	free(recvcount);
 	free(sdisplc);
