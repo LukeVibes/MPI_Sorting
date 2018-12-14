@@ -29,6 +29,7 @@ int* sdisplc;
 int* rdisplc;
 int* recvcount;
 int* post_buckets;
+int* procs_post_bucket_sizes;
 
 ///debug values
 bool debug=true;
@@ -47,7 +48,7 @@ void  allocateInitalMemory(){
 	sdisplc      = (int *)calloc(p, sizeof(int)); 
 	rdisplc		 = (int *)calloc(p, sizeof(int)); 
 	recvcount    = (int *)malloc(sizeof(int) * p);
-	post_buckets = (int *)malloc(sizeof(int) * n);
+	procs_post_bucket_sizes = (int *)malloc(sizeof(int) * p);
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -259,6 +260,13 @@ void displcMaker(int p, int* displc, int* sizes){
 	}
 }
 
+void arrayAllNegOne(int* arr, int n){
+
+	for(int i=0; i<n; i++){
+		arr[i] = -1;
+	}
+}
+
 int main(int argc, char *argv[])
 
 {
@@ -350,7 +358,7 @@ int main(int argc, char *argv[])
 	///create sdisplc array
 	displcMaker(p, sdisplc, bucketSize);
 	
-//Step Nine: Send bucket sizes
+//Step Nine: Send bucket sizes and prep bucket sending
 	///sending (also creates recvcount aka bucket sizes of others)
 	MPI_Alltoall(bucketSize, 1, MPI_INT,
 				 recvcount, 1, MPI_INT,
@@ -358,19 +366,38 @@ int main(int argc, char *argv[])
 	
 	///create rdisplc
 	displcMaker(p, rdisplc, recvcount);
+	
+	///create post_buckets (with custom size)
+	int post_buckets_size=0;
+	for(int i=0; i<p; i++){post_buckets_size += recvcount[i];}
+	post_buckets = (int *)malloc(sizeof(int) * post_buckets_size);
+	
+	///set post_buckets with all -1's for testing purposes...
+	arrayAllNegOne(post_buckets, n);
 
 //Step Ten: bucket Alltoallv
 	MPI_Alltoallv(buckets, bucketSize, sdisplc, MPI_INT,
 				  post_buckets, recvcount, rdisplc, MPI_INT,
 				  MPI_COMM_WORLD);
 
-//Step Eleven: send out post-bucket sizes to all
+//Step Eleven: Sort post_buckets
+	heapSorter(post_buckets, n);
+
+//Step Twelve: send out post-bucket sizes to all
+	///create a send buffer...
+	int* sendbuf = (int *)malloc(sizeof(int) * p);
+	for(int i=0; i<p; i++){sendbuf[i]= post_buckets_size;}
+	
+	///sending
+	MPI_Alltoall(sendbuf, 1, MPI_INT,
+				 procs_post_bucket_sizes, 1, MPI_INT,
+				 MPI_COMM_WORLD);
+				
+
+//Step Thirteen: Adjust post-bucket sizes
 
 
-//Step Twelve: Adjust post-bucket sizes
-
-
-//Step Thirteen: Print to output file!
+//Step Fourteen: Print to output file!
 
 
 
@@ -452,6 +479,8 @@ int main(int argc, char *argv[])
 
 
  //Wrap-up
+	free(procs_post_bucket_sizes);
+	free(sendbuf);
 	free(post_buckets);
 	free(bucketSize);
 	free(recvcount);
