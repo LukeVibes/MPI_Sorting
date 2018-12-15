@@ -1,8 +1,12 @@
-10
-9
-8
 7
-6
+8
+8
+8
+9
+9
+9
+9
+9
 
 
-Performance: 
+Performances: 

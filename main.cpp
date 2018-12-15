@@ -30,6 +30,7 @@ int* rdisplc;
 int* recvcount;
 int* post_buckets;
 int* procs_post_bucket_sizes;
+int* final_bucket;
 
 ///debug values
 bool debug=true;
@@ -49,6 +50,7 @@ void  allocateInitalMemory(){
 	rdisplc		 = (int *)calloc(p, sizeof(int)); 
 	recvcount    = (int *)malloc(sizeof(int) * p);
 	procs_post_bucket_sizes = (int *)malloc(sizeof(int) * p);
+	final_bucket = (int *)malloc(sizeof(int) * (n*p));
 }
 
 ///importFromFile: simply imports text file (in specifc format) into array.
@@ -84,18 +86,18 @@ void importFromFile(string filename){
 void exportToFile(string filename){
 	
 	fstream outputFile;
-	outputFile.open("output.txt", ios::out | ios::trunc);
+	outputFile.open(filename, ios::out | ios::trunc);
 	
 	///Print sorted array to file
 	int n = numberOfValuesToSort;
 	for(int i=0; i<n; i++){
-		outputFile << valuesToSort[i];
+		outputFile << final_bucket[i];
 		outputFile << endl;
 	}
 	outputFile << endl << endl;
 	
 	///Print performance data
-	outputFile << "Performance: " << endl;
+	outputFile << "Performances: " << endl;
 	
 	
 	
@@ -293,7 +295,6 @@ int main(int argc, char *argv[])
 
  //Step One: Locally Sort each processors values
 	string inputfile = "input-0" + to_string(rank) + ".txt";
-	string outputfile = "output-0" + to_string(rank) + ".txt";
 
 	importFromFile(inputfile);
 	int n = numberOfValuesToSort;
@@ -434,7 +435,7 @@ int main(int argc, char *argv[])
 
 
 //Step Thirteen: Adjust post-bucket sizes
-	///prep allToAllv values for sending values only to Proc-0
+	///prep allToAllv values for non Proc-0 processors
 	if(rank != 0){
 		for(int i=0; i<p; i++){
 			sdisplc[i]=0;	
@@ -442,13 +443,14 @@ int main(int argc, char *argv[])
 			rdisplc[i]=0;							
 		}
 		
-		bucketSize[0] = post_buckets_size;				///post_buckets_size created in Step Nine
+		bucketSize[0] = post_buckets_size;	///post_buckets_size created in Step Nine
 		for(int i=1; i<p; i++){
 			bucketSize[i]=0;								
 		}
 	}
-	if(rank == 0){
-		
+	
+	///prep alltoAllv values for Proc-0
+	if(rank == 0){	
 		for(int i=0; i<p; i++){
 			cout << procs_post_bucket_sizes[i] << ", ";
 		}
@@ -465,201 +467,43 @@ int main(int argc, char *argv[])
 		
 		displcMaker(p, rdisplc, procs_post_bucket_sizes);
 	}
+	
+	
 	int* recvbuf = (int *)malloc(sizeof(int) * (n*p));
 	int* bucketbuf = (int *)malloc(sizeof(int) * (n*p));
 	for(int i=0; i<procs_post_bucket_sizes[rank]; i++){bucketbuf[i]=post_buckets[i];}
 	
+	///send all values to processor one
 	MPI_Alltoallv(bucketbuf, bucketSize, sdisplc, MPI_INT,
 				  recvbuf, recvcount, rdisplc, MPI_INT,
 				  MPI_COMM_WORLD);
 				  
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==0){
-		for(int i=0; i<(n*p); i++){
-			cout << recvbuf[i] << ",";
+	///prep to send back values, now evenly distriuted through processors.
+	for(int i=0; i<p; i++){
+		if(rank==0){
+			bucketSize[i] = n; //IMPORANT: here n is the value we read from the inputfile upon starting
+								//          the program. we want each processor to have this many values
+								//		   in its output file as this MUST be the most effective outcome.
 		}
-		cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==0){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<post_buckets_size; i++){
-				cout << post_buckets[i] << ", ";
+		else{
+			bucketSize[i] =0;
+			sdisplc[i]=0;
 		}
-			cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==1){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<post_buckets_size; i++){
-				cout << post_buckets[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==2){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<post_buckets_size; i++){
-				cout << post_buckets[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==3){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<post_buckets_size; i++){
-				cout << post_buckets[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	
-	///Proc-0 sends back each processor new values
-	
-		for(int i=0; i<p; i++){
-			if(rank==0){
-				bucketSize[i] = n; //IMPORANT: here n is the value we read from the inputfile upon starting
-									//          the program. we want each processor to have this many values
-									//		   in its output file as this MUST be the most effective outcome.
-			}
-			else{
-				bucketSize[i] =0;
-				sdisplc[i]=0;
-			}
-			if(i>0){rdisplc[i]=n;}
-			else{rdisplc[0]=0;}      
-			
-			if(i>0){recvcount[i] = 0;}
-			else{recvcount[0] = n;} //IMPORTANT: same logic as bucketSize[]
-		}
+		if(i>0){rdisplc[i]=n;}
+		else{rdisplc[0]=0;}      
 		
-		if(rank==0){displcMaker(p, sdisplc, bucketSize);}
-		
-		int* final_bucket = (int *)malloc(sizeof(int) * (n*p));
-		MPI_Alltoallv(recvbuf, bucketSize, sdisplc,	MPI_INT	,
-					  final_bucket, recvcount, rdisplc, MPI_INT,
-					  MPI_COMM_WORLD);
-	
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==0){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<n; i++){
-				cout << final_bucket[i] << ", ";
-		}
-			cout << endl;
+		if(i>0){recvcount[i] = 0;}
+		else{recvcount[0] = n;} //IMPORTANT: same logic as bucketSize[]
 	}
+	if(rank==0){displcMaker(p, sdisplc, bucketSize);}
 	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==1){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<n; i++){
-				cout << final_bucket[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==2){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<n; i++){
-				cout << final_bucket[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==3){
-		cout << "rank " << rank << ": ";
-		for(int i=0; i<n; i++){
-				cout << final_bucket[i] << ", ";
-		}
-			cout << endl;
-	}
-	
-	
+	///send back values to processors
+	MPI_Alltoallv(recvbuf, bucketSize, sdisplc,	MPI_INT	,
+				  final_bucket, recvcount, rdisplc, MPI_INT,
+				  MPI_COMM_WORLD);
 	
 //Step Fourteen: Print to output file!
-
-
-
-
-
-	/*
-		cout << endl << endl;
-		cout << "global-p: " << endl;
-		for(int i=0; i<(p); i++){
-			cout << global_p[i] << ", ";
-		}
-		cout << endl << endl;
-		
-		for(int b=0; b<p; b++){
-			cout << "Bucket " << b << ":" << endl;
-			cout << "    size: " << bucketSize[b] << endl << endl;
-		}
-		
-		cout << endl << endl;
-		
-		cout << "buckets: " << endl;
-		for(int i=0; i<n; i++){
-			cout << buckets[i] << ", ";
-		}
-		cout << endl << endl;
-		
-		cout << "valuesToSort: " << endl;
-		for(int i=0; i<n; i++){
-			cout << valuesToSort[i] << ", ";
-		}
-		cout << endl << endl;
-		*/
-	
-	
-	/*
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(rank==0){
-		for(int i=0; i<p; i++){
-		if(debug==true){cout << p_sample[i] << " ";}
-		}
-		
-		if(debug==true){cout << endl;}
-		for(int i=0; i<n; i++){
-		if(debug==true){cout << valuesToSort[i] << " ";}
-		}
-		if(debug==true){cout << endl << endl;}
-	}
-	MPI_Barrier(MPI_COMM_WORLD);
-	if( rank==1){
-		for(int i=0; i<p; i++){
-		if(debug==true){cout << p_sample[i] << " ";}
-		}
-	
-		if(debug==true){cout << endl;}
-		for(int i=0; i<n; i++){
-		if(debug==true){cout << valuesToSort[i] << " ";}
-		}
-		if(debug==true){cout << endl << endl;}
-	}
-	MPI_Barrier(MPI_COMM_WORLD);
-	if( rank==2){
-		for(int i=0; i<p; i++){
-		if(debug==true){cout << p_sample[i] << " ";}
-		}
-		if(debug==true){cout << endl << endl;}
-	}
-	MPI_Barrier(MPI_COMM_WORLD);
-	if( rank==3){
-		for(int i=0; i<p; i++){
-		if(debug==true){cout << p_sample[i] << " ";}
-		}
-		if(debug==true){cout << endl << endl;}
-	}
-	*/
-
-
+	string outputfile = "output-0" + to_string(rank) + ".txt";
 	exportToFile(outputfile);
 
 
@@ -674,11 +518,11 @@ int main(int argc, char *argv[])
 	free(sdisplc);
 	free(rdisplc);
 	free(buckets);
-	//free(sendBuffer);
 	free(global_p);
 	free(all_p_samples);
 	free(p_sample);
 	free(valuesToSort);
+	
 	MPI::Finalize();
 	return 0;
 }
