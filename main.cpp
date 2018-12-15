@@ -260,11 +260,22 @@ void displcMaker(int p, int* displc, int* sizes){
 	}
 }
 
-void arrayAllNegOne(int* arr, int n){
+void arrayAllNegOne(int* arr, int n, int rank){
 
 	for(int i=0; i<n; i++){
-		arr[i] = -1;
+		arr[i] = 0;
 	}
+}
+
+void sendValuesback(int proc, int n, int p, int oversize){
+	int valuesToMove = oversize - n;
+	
+	for(int i=(n-1); i<oversize; i++){
+		post_buckets[i];
+	}
+}
+
+void sendValuesForward(int proc, int n, int p, int oversize){
 }
 
 int main(int argc, char *argv[])
@@ -358,6 +369,26 @@ int main(int argc, char *argv[])
 	///create sdisplc array
 	displcMaker(p, sdisplc, bucketSize);
 	
+	
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==1){
+		cout << "rank "<< rank << endl;
+		for(int b=0; b<p; b++){
+			cout << "bucket " << b << ": ";
+			for(int i=0; i<bucketSize[b]; i++){
+					int plus=0;
+					if(b==0){plus=0;}
+					else{plus = sdisplc[b];}
+					cout << buckets[plus+i] << ", ";
+			}
+				cout << endl;
+		}
+		
+	}
+	
+	
+	
 //Step Nine: Send bucket sizes and prep bucket sending
 	///sending (also creates recvcount aka bucket sizes of others)
 	MPI_Alltoall(bucketSize, 1, MPI_INT,
@@ -373,32 +404,186 @@ int main(int argc, char *argv[])
 	post_buckets = (int *)malloc(sizeof(int) * post_buckets_size);
 	
 	///set post_buckets with all -1's for testing purposes...
-	arrayAllNegOne(post_buckets, n);
+	//arrayAllNegOne(post_buckets, n, rank);
 
 //Step Ten: bucket Alltoallv
 	MPI_Alltoallv(buckets, bucketSize, sdisplc, MPI_INT,
 				  post_buckets, recvcount, rdisplc, MPI_INT,
 				  MPI_COMM_WORLD);
+	
+	
 
 //Step Eleven: Sort post_buckets
-	heapSorter(post_buckets, n);
-
+	heapSorter(post_buckets, post_buckets_size);
+	
 //Step Twelve: send out post-bucket sizes to all
+	
 	///create a send buffer...
 	int* sendbuf = (int *)malloc(sizeof(int) * p);
-	for(int i=0; i<p; i++){sendbuf[i]= post_buckets_size;}
+	for(int i=0; i<p; i++){sendbuf[i]= post_buckets_size;} ///post_buckets_size created in Step Nine
 	
 	///sending
 	MPI_Alltoall(sendbuf, 1, MPI_INT,
 				 procs_post_bucket_sizes, 1, MPI_INT,
 				 MPI_COMM_WORLD);
-				
+				 
+				 
+				 
+	
+	
+
 
 //Step Thirteen: Adjust post-bucket sizes
-
-
+	///prep allToAllv values for sending values only to Proc-0
+	if(rank != 0){
+		for(int i=0; i<p; i++){
+			sdisplc[i]=0;	
+			recvcount[i]=0;
+			rdisplc[i]=0;							
+		}
+		
+		bucketSize[0] = post_buckets_size;				///post_buckets_size created in Step Nine
+		for(int i=1; i<p; i++){
+			bucketSize[i]=0;								
+		}
+	}
+	if(rank == 0){
+		
+		for(int i=0; i<p; i++){
+			cout << procs_post_bucket_sizes[i] << ", ";
+		}
+		cout << endl;
+		
+		rdisplc[0]=0;
+		bucketSize[0] = procs_post_bucket_sizes[0];
+		for(int i=0; i<p; i++){
+			recvcount[i] = procs_post_bucket_sizes[i];
+			if(i>0){
+				bucketSize[i]=0;
+			}	
+		}
+		
+		displcMaker(p, rdisplc, procs_post_bucket_sizes);
+	}
+	int* recvbuf = (int *)malloc(sizeof(int) * (n*p));
+	int* bucketbuf = (int *)malloc(sizeof(int) * (n*p));
+	for(int i=0; i<procs_post_bucket_sizes[rank]; i++){bucketbuf[i]=post_buckets[i];}
+	
+	MPI_Alltoallv(bucketbuf, bucketSize, sdisplc, MPI_INT,
+				  recvbuf, recvcount, rdisplc, MPI_INT,
+				  MPI_COMM_WORLD);
+				  
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==0){
+		for(int i=0; i<(n*p); i++){
+			cout << recvbuf[i] << ",";
+		}
+		cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==0){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<post_buckets_size; i++){
+				cout << post_buckets[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==1){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<post_buckets_size; i++){
+				cout << post_buckets[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==2){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<post_buckets_size; i++){
+				cout << post_buckets[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==3){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<post_buckets_size; i++){
+				cout << post_buckets[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	
+	///Proc-0 sends back each processor new values
+	
+		for(int i=0; i<p; i++){
+			if(rank==0){
+				bucketSize[i] = n; //IMPORANT: here n is the value we read from the inputfile upon starting
+									//          the program. we want each processor to have this many values
+									//		   in its output file as this MUST be the most effective outcome.
+			}
+			else{
+				bucketSize[i] =0;
+				sdisplc[i]=0;
+			}
+			if(i>0){rdisplc[i]=n;}
+			else{rdisplc[0]=0;}      
+			
+			if(i>0){recvcount[i] = 0;}
+			else{recvcount[0] = n;} //IMPORTANT: same logic as bucketSize[]
+		}
+		
+		if(rank==0){displcMaker(p, sdisplc, bucketSize);}
+		
+		int* final_bucket = (int *)malloc(sizeof(int) * (n*p));
+		MPI_Alltoallv(recvbuf, bucketSize, sdisplc,	MPI_INT	,
+					  final_bucket, recvcount, rdisplc, MPI_INT,
+					  MPI_COMM_WORLD);
+	
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==0){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<n; i++){
+				cout << final_bucket[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==1){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<n; i++){
+				cout << final_bucket[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==2){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<n; i++){
+				cout << final_bucket[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(rank==3){
+		cout << "rank " << rank << ": ";
+		for(int i=0; i<n; i++){
+				cout << final_bucket[i] << ", ";
+		}
+			cout << endl;
+	}
+	
+	
+	
 //Step Fourteen: Print to output file!
-
 
 
 
@@ -479,6 +664,8 @@ int main(int argc, char *argv[])
 
 
  //Wrap-up
+	free(bucketbuf);
+	free(recvbuf);
 	free(procs_post_bucket_sizes);
 	free(sendbuf);
 	free(post_buckets);
